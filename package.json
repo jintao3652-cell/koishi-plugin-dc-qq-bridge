@@ -1,0 +1,22 @@
+{
+  "name": "koishi-plugin-dc-qq-bridge",
+  "description": "联通QQ和DC的插件",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "license": "MIT",
+  "scripts": {},
+  "keywords": [
+    "chatbot",
+    "koishi",
+    "plugin"
+  ],
+  "devDependencies": {},
+  "peerDependencies": {
+    "koishi": "4.18.11"
+  }
+}
