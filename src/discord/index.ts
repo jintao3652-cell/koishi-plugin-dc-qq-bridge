@@ -58,6 +58,7 @@ export default class ProcessorDiscord {
 		qqbot: Bot,
 		Blacklist: BlacklistDetector,
 		discordEmbeds: any[] = [],
+		discordStickers: any[] = [],
 	): Promise<string> {
 		for (const element of elements.length === 0 ? message_data.quote.elements : elements) {
 			switch (element.type) {
@@ -182,6 +183,38 @@ export default class ProcessorDiscord {
 		const embedText = this.formatEmbeds(discordEmbeds);
 		if (embedText && !Blacklist.check(embedText)) {
 			message += `${message && !message.endsWith("\n") ? "\n\n" : ""}${embedText}`;
+		}
+
+		// Discord 卡片(embed) 内嵌的图片 / 缩略图在 Koishi 里不会自动转成 img 元素，
+		// 若只转发文本会导致 QQ 端收不到图（新闻 / 公告类 webhook 常把图放在 embed 里）。
+		// 这里把 embed 的 image / thumbnail 下载后作为图片附带发送给 QQ。
+		for (const embed of discordEmbeds ?? []) {
+			const embedImageUrl = embed?.image?.url || embed?.thumbnail?.url;
+			if (embedImageUrl && !Blacklist.check(embedImageUrl)) {
+				try {
+					message += h.image(await resolveMediaUrl(embedImageUrl, config, ctx));
+				} catch (error: any) {
+					logger.warn(`转发 Discord embed 图片失败，已跳过：${embedImageUrl} | ${error?.message || error}`);
+				}
+			}
+		}
+
+		// Discord 贴纸(sticker)同样不会自动转成 img 元素（适配器不解析 sticker_items），
+		// 若不单独取出会导致 QQ 端收不到贴纸图。Lottie(format_type=3) 是动画 JSON 非图片，跳过。
+		for (const sticker of discordStickers ?? []) {
+			if (sticker?.format_type === 3) continue;
+			const stickerUrl =
+				sticker?.asset?.url ||
+				(sticker?.id
+					? `https://cdn.discordapp.com/stickers/${sticker.id}.${sticker.format_type === 4 ? "gif" : "png"}`
+					: null);
+			if (stickerUrl && !Blacklist.check(stickerUrl)) {
+				try {
+					message += h.image(await resolveMediaUrl(stickerUrl, config, ctx));
+				} catch (error: any) {
+					logger.warn(`转发 Discord 贴纸失败，已跳过：${stickerUrl} | ${error?.message || error}`);
+				}
+			}
 		}
 
 		return message;

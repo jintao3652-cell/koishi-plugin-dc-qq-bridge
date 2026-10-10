@@ -73,7 +73,7 @@ export default class ProcessorQQ {
 					break;
 				}
 				case "json": {
-					const [stop, reason] = this.json(element.attrs.data, message_body);
+					const [stop, reason] = await this.json(element.attrs.data, message_body, http);
 					if (stop) return [true, reason];
 
 					break;
@@ -188,7 +188,7 @@ export default class ProcessorQQ {
 						break;
 					}
 					case "json": {
-						this.json(element["data"]["data"], message_body);
+						await this.json(element["data"]["data"], message_body, ctx.http);
 
 						break;
 					}
@@ -281,13 +281,35 @@ export default class ProcessorQQ {
 		return [false, ""];
 	}
 
-	static json(raw: string, message_body: MessageBody): [boolean, string] {
+	// 把外链图片下载为附件，返回 Discord embed 可用的 image 对象。
+	// 下载成功：用 attachment:// 引用附件（Discord 爬虫抓不到的 QQ CDN 图也能正常显示）；
+	// 下载失败：回退为原始 URL（尽量保留，但可能仍不显示）。
+	static async resolveEmbedImage(url: string, message_body: MessageBody, http: HTTP): Promise<{ url: string }> {
+		if (!url) return { url: "" };
+		try {
+			const [blob, type] = await getBinary(url, http);
+			if (blob) {
+				const ext = (type && type.split("/")[1]) || "png";
+				const filename = `${uuidv4()}.${ext}`;
+				message_body.form.append(`files[${message_body.n}]`, blob, filename);
+				message_body.n++;
+				message_body.hasFile = true;
+				message_body.validElement = true;
+				return { url: `attachment://${filename}` };
+			}
+		} catch (error: any) {
+			logger.warn(`下载新闻卡片图片失败，回退为原始链接：${url} | ${error?.message || error}`);
+		}
+		return { url };
+	}
+
+	static async json(raw: string, message_body: MessageBody, http: HTTP): Promise<[boolean, string]> {
 		const data = JSON.parse(raw);
 		switch (data["app"]) {
 			case "com.tencent.structmsg": {
-				let image = {};
-
-				if ("preview" in data["meta"]["news"]) image = { url: data["meta"]["news"]["preview"] };
+				let image: { url: string } = { url: "" };
+				const preview = data["meta"]["news"]["preview"];
+				if (preview) image = await this.resolveEmbedImage(preview, message_body, http);
 
 				message_body.embed = [
 					{
@@ -309,9 +331,8 @@ export default class ProcessorQQ {
 			}
 			case "com.tencent.miniapp_01": {
 				const preview = data["meta"]["detail_1"]["preview"];
-				const image = {
-					url: /^https?:\/\//i.test(preview) ? preview : `https://${preview}`,
-				};
+				const imageUrl = /^https?:\/\//i.test(preview) ? preview : `https://${preview}`;
+				const image = await this.resolveEmbedImage(imageUrl, message_body, http);
 
 				message_body.embed = [
 					{
@@ -332,9 +353,7 @@ export default class ProcessorQQ {
 				const detail = data["meta"]["detail"];
 				const feed = detail["feed"];
 
-				const image = {
-					url: feed["images"][0]["pic_url"],
-				};
+				const image = await this.resolveEmbedImage(feed["images"][0]["pic_url"], message_body, http);
 
 				message_body.embed = [
 					{

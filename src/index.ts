@@ -100,6 +100,14 @@ function shouldIgnoreMessage(session: Session, sender) {
   return pattern.test(sender.name ?? "[QQ:10000]");
 }
 
+// 基础设置：指定 DC 机器人 APP ID 后，仅处理该机器人收到的事件，
+// 避免多个 Discord 机器人并存时与 X 转发等插件互相冲突。
+function isOwnedDiscordBot(config: Config, session: Session): boolean {
+  if (session.platform !== "discord") return true;
+  if (!config.discord_app_id) return true;
+  return session.selfId === config.discord_app_id;
+}
+
 async function appendQQQuoteReply(
   ctx: Context,
   dcBot,
@@ -385,15 +393,17 @@ async function handleDiscordToQQ(
   let { message, quotedMessageId } = quotePrefix;
 
   let discordEmbeds: any[] = [];
+  let discordStickers: any[] = [];
   try {
     const rawMessage = await dcBot.internal.getChannelMessage(channelId, messageData.id);
     if (Array.isArray(rawMessage?.embeds)) discordEmbeds = rawMessage.embeds;
+    if (Array.isArray(rawMessage?.sticker_items)) discordStickers = rawMessage.sticker_items;
   } catch (error) {
-    logger.warn(`Unable to load Discord embeds for message ${messageData.id}: ${error}`);
+    logger.warn(`Unable to load Discord embeds/stickers for message ${messageData.id}: ${error}`);
   }
 
   // 处理消息元素
-  message = await ProcessorDiscord.process(elements, config, [from, to], ctx, message, messageData, dcBot, qqbot, blacklist, discordEmbeds);
+  message = await ProcessorDiscord.process(elements, config, [from, to], ctx, message, messageData, dcBot, qqbot, blacklist, discordEmbeds, discordStickers);
   if (!message.trim()) return false;
 
   // https://github.com/Cola-Ace/koishi-plugin-bridge-discord-qq/issues/6
@@ -441,6 +451,9 @@ const main = async (ctx: Context, config: Config, session: Session, sourceTimest
   // 测试用
   if (config.debug) {
   }
+
+  // 基础设置：仅处理指定 DC 机器人的消息，避免机器人冲突
+  if (!isOwnedDiscordBot(config, session)) return;
 
   // 如果 message_data 不包含 id 字段，则代表该消息为 QQ 文件的占位符消息，直接跳过
   if (!(messageData && "id" in messageData)) return;
@@ -622,7 +635,13 @@ export function apply(ctx: Context, config: Config) {
     ctx.setInterval(pollAnnouncements, config.announcement_poll_interval * 1000);
   }
 
-  // for Discord
-  ctx.on("discord/message-update", async session => await onDiscordMessageUpdated(ctx, config, session));
-  ctx.on("discord/message-delete", async session => await onDiscordMessageDeleted(ctx, config, session));
+  // for Discord（同样受基础设置 APP ID 限制，避免机器人冲突）
+  ctx.on("discord/message-update", async session => {
+    if (!isOwnedDiscordBot(config, session)) return;
+    await onDiscordMessageUpdated(ctx, config, session);
+  });
+  ctx.on("discord/message-delete", async session => {
+    if (!isOwnedDiscordBot(config, session)) return;
+    await onDiscordMessageDeleted(ctx, config, session);
+  });
 }

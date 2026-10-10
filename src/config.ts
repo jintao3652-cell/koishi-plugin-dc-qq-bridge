@@ -15,6 +15,7 @@ export interface BasicType {
 
 export interface Config {
   debug: boolean,
+  discord_app_id: string,
   file_processor: "Koishi" | "QQBot",
   sync_edit_delete: boolean,
   download_threads: number,
@@ -49,6 +50,8 @@ export interface BridgeMessage {
 
 export const Config: Schema<Config> = Schema.object({
   debug: Schema.boolean().description("开启 Debug 模式").default(false),
+
+  discord_app_id: Schema.string().description("基础设置：指定 DC 机器人 APP ID（Discord 应用程序 ID / 机器人账号 ID）。存在多个 Discord 机器人时，桥接仅处理该机器人收到的消息，避免与 X 转发等插件的机器人冲突。留空则不限制").default(""),
 
   file_processor: Schema.union([
     Schema.const("Koishi").description("Koishi downloads Discord media and sends an inline data URL. Recommended when QQ cannot access Discord."),
